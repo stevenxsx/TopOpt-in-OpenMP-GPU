@@ -18,7 +18,7 @@ if [[ ! -x ./top3d ]]; then
 fi
 
 if [[ $# -eq 0 ]]; then
-    set -- -x 16 -y 8 -z 8 -l 4 -w 1
+    set -- -x 12 -y 6 -z 6 -l 4 -w 1 -i 1
 fi
 
 exec ./top3d "$@"

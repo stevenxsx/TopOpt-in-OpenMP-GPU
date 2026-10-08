@@ -1,5 +1,5 @@
 #include "stencil_grid_utility.h"
-
+#include <stdio.h>
 #include "local_matrix.h"
 
 #include "gpu_definitions.h"
@@ -64,6 +64,9 @@ void setFixedDof_halo(struct gridContext *gc, const int l) {
   #pragma omp target enter data map(to : pidx[:n])
 }
 
+//Setup the grid context for the multigrid solver. 
+// This includes setting up the precomputed stiffness matrices and the fixed degrees of freedom for 
+// each level of the multigrid hierarchy.
 void setupGC(struct gridContext *gc, const int nl, const int nelx, const int nely, const int nelz) {
 
   (*gc).E0 = 1;
@@ -98,6 +101,29 @@ void setupGC(struct gridContext *gc, const int nl, const int nelx, const int nel
     const int pKESize = 24 * 24 * ncell * ncell * ncell;
     (*gc).precomputedKE[l] = malloc(sizeof(MTYPE) * pKESize);
     getKEsubspace((*gc).precomputedKE[l], (*gc).nu, l);
+
+    //Extract the KE for finest level (l=0) in order to import it to the python/cutile version of the code
+    //without having to import all the code that computes it.
+    //TEMPORARY
+    if (l == 0) {
+      printf("Writing KE for level 0 to ../topopt_data/ke_level0.txt\n");
+      FILE *f = fopen("../topopt_data/ke_level0.txt", "w");
+      const MTYPE *KE = (*gc).precomputedKE[0];
+      for (int i = 0; i < 24; i++) {
+        for (int j = 0; j < 24; j++) {
+          fprintf(f, "%.17g", (double)KE[i * 24 + j]);
+
+          if (j < 23) {
+            fprintf(f, " ");
+          }
+
+        }
+
+        fprintf(f, "\n");
+      }
+      fclose(f);
+      //END TEMPORARY
+    }
 
     setFixedDof_halo(gc, l);
 

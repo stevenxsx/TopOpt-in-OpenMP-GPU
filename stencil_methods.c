@@ -454,16 +454,22 @@ void applyStateOperatorSubspace_halo(const struct gpuNode * gpu_node, const int 
   for (uint32_t i = 0; i < ndofc; i++)
     out[i] = 0.0;
 
+  // Divide the coarse elements into 8 groups according to the parity of their x/y/z coordinates 
+  // (number of combinations of 0's and 1's with 3 dimensions)
   for (int32_t bx = 0; bx < 2; bx++)
     for (int32_t bz = 0; bz < 2; bz++)
       for (int32_t by = 0; by < 2; by++)
+              //Visit every 2nd coarse element in each direction
               #pragma omp target teams distribute parallel for collapse(4) schedule(static) device(gpu_node->id)
               for (int32_t i = bx + 1; i < nelxc + 1; i += 2)
                 for (int32_t k = bz + 1; k < nelzc + 1; k += 2)
                   for (int32_t j = by + 1; j < nelyc + 1; j += 2) 
+                    //Loop over the 24 displacement degrees of freedom (8 nodes with 3 dimensions each) of the local element stiffness matrix
                     for (int imv=0;imv<24;imv++){
                       MTYPE out_local = 0.0;
                       uint_fast32_t idx_update = 0;
+                      //Iterate over the 8 corner nodes of the hexahedral element in question
+                      //Everything within this nest for->(kt,jt,it,off) can be simplified to "for each of the 24 element input DOFs"
                       for (int kt=0;kt<2;kt++){
                         for (int jt=0;jt<2;jt++){
                           for (int it=0;it<2;it++){
@@ -471,31 +477,43 @@ void applyStateOperatorSubspace_halo(const struct gpuNode * gpu_node, const int 
                               if (jt == 1){
                                 nx = i + 1-it;
                               }
+                              //Maps that corner to its starting position among the 24 element DOFs
                               const int pos = 3*(kt*4+jt*2+it);
                               const int nz = k + kt;
                               const int ny = j + 1-jt;
+                              //Convert the 3D node coordinates into a flat array index
                               const uint_fast32_t nIndex = nx * wrapyc * wrapzc + nz * wrapyc + ny;
+                              //Gives the first of that node's three global DOFs
                               uint_fast32_t edof = 3 * nIndex;
+                              //Find out which global DOF corresponds to the local element DOF 'imv' ? This location will receive out_local
                               for (int off1 = 0;off1<3;off1++){
                                 if (pos + off1 == imv){
                                   idx_update = edof+off1;
                                 }
                               }
+                              // Multigrid-related loop. One coarse element represents a block of fine elements. Ncell cubed gives the number of
+                              // fine elements in the coarse elements, e.g. ncell = 2 gives us 2x2x2  fine elements in the one coarse element.
                               for (int ii = 0; ii < ncell; ii++)
                                 for (int kk = 0; kk < ncell; kk++)
                                   for (int jj = 0; jj < ncell; jj++){
+                                    //Map the current coarse element + local fine-element offset back to fine-grid coordinates.
                                     const int ifine = ((i - 1) * ncell) + ii + 1;
                                     const int jfine = ((j - 1) * ncell) + jj + 1;
                                     const int kfine = ((k - 1) * ncell) + kk + 1;
 
                                     const int cellidx = 24 * 24 * (ncell * ncell * ii + ncell * kk + jj);
-
+                                    
+                                    //Turn the fine element coordinate into an index into the design field x
                                     const uint_fast32_t elementIndex =
                                         ifine * (gc.wrapy - 1) * (gc.wrapz - 1) +
                                         kfine * (gc.wrapy - 1) + jfine;
+                                    // SIMP material interpolation
                                     const MTYPE elementScale =
                                         gc.Emin + x[elementIndex] * x[elementIndex] *
                                         x[elementIndex] * (gc.E0 - gc.Emin);
+                                    // The core numerical operation. For each local row 'imv', it accumulates for each relevant local DOF. 
+                                    // Together, they visit each DOF of each corner node (3x8), they visit 24 columns of the element stiffness matrix.
+                                    // 
                                     for (int off = 0;off<3;off++){
                                       out_local += elementScale*KE[cellidx+imv*24+pos+off]*((MTYPE)in[edof+off]);
                                     }
@@ -504,13 +522,16 @@ void applyStateOperatorSubspace_halo(const struct gpuNode * gpu_node, const int 
                           }
                         }
                       }
+                      //Add this element's contribution into the appropriate global DOF. Atomic is needed because multiple neighbouring elements 
+                      //contribute to the same global node/DOF.
                       #pragma omp atomic update
                       out[idx_update] += (CTYPE)out_local;
                     }
                   
             
 
-            // apply boundaryConditions
+// apply the fixed boundaryConditions. For constrained DOFs, instead of allowing the usual stiffness operation, it effectively 
+// makes that row behave like an identity row. This is a common way of enforcing Dirichlet constraints.
 //#pragma omp parallel for schedule(static) default(none) shared(gc,in,out)
 #pragma omp target teams distribute parallel for schedule(static) device(gpu_node->id)//default(none) shared(gc,in,out)
   for (int i = 0; i < n; i++) {

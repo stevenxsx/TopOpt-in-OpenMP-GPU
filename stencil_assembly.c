@@ -87,6 +87,7 @@ void allocateSubspaceMatrix(const struct gridContext gc, const int l,
         int rowOffset2 = (*M).rowOffsets[row2];
         int rowOffset3 = (*M).rowOffsets[row3];
 
+        
         for (int ii = xmin; ii < xmax; ii++)
           for (int kk = zmin; kk < zmax; kk++)
             for (int jj = ymin; jj < ymax; jj++) {
@@ -123,6 +124,7 @@ void freeSubspaceMatrix(struct CSRMatrix *M) {
   free((*M).colIndex);
 }
 
+//int l is the level of the subspace matrix, where l=0 is the finest level and l>0 are coarser levels.
 void assembleSubspaceMatrix(const struct gridContext gc, const int l,
                             const DTYPE *x, struct CSRMatrix M, MTYPE *tmp) {
 
@@ -172,6 +174,8 @@ void assembleSubspaceMatrix(const struct gridContext gc, const int l,
                   ke[iii][jjj] = 0.0;
 
               // assemble local matrix
+              // Loops over all the fine elements in the coarse element and adds their contributions to the local stiffness matrix ke.
+              // ncell is the number of fine elements in each direction in the coarse element.
               for (int ii = 0; ii < ncell; ii++)
                 for (int kk = 0; kk < ncell; kk++)
                   for (int jj = 0; jj < ncell; jj++) {
