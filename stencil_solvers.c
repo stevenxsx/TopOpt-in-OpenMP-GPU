@@ -280,7 +280,7 @@ void solveStateMG_halo(const struct gpuGrid * gpu_gc, DTYPE *x, const int nswp,
   for (uint_fast32_t i = 0; i < ndof; i++)
     z[i] = (CTYPE)u[i];
 
-  for (int l = number_of_matrix_free_levels; l < nl; l++) {
+  for (int l = MIN(number_of_matrix_free_levels, nl - 1); l < nl; l++) {
     // printf("assemble mat l:%i\n", l);
     assembleSubspaceMatrix(*gc, l, x, data->coarseMatrices[l], invD[l]);
     MTYPE *invDptr = invD[l];
@@ -423,7 +423,7 @@ void allocateSolverData(const struct gridContext gc, const int nl,
 
   // allocate for all levels for easy indces
   (*data).coarseMatrices = malloc(sizeof(struct CSRMatrix) * nl);
-  for (int l = number_of_matrix_free_levels; l < nl; l++) {
+  for (int l = MIN(number_of_matrix_free_levels, nl - 1); l < nl; l++) {
     allocateSubspaceMatrix(gc, l, &((*data).coarseMatrices[l]));
   }
 }
@@ -450,7 +450,7 @@ void freeSolverData(struct SolverDataBuffer *data, const int nl) {
   free((*data).zmg);
   free((*data).rmg);
 
-  for (int l = number_of_matrix_free_levels; l < nl; l++) {
+  for (int l = MIN(number_of_matrix_free_levels, nl - 1); l < nl; l++) {
     freeSubspaceMatrix(&((*data).coarseMatrices[l]));
   }
   free((*data).coarseMatrices);
